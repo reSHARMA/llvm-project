@@ -162,7 +162,7 @@ void llvm::CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
 
     // Create a new basic block and copy instructions into it!
     BasicBlock *CBB = CloneBasicBlock(&BB, VMap, NameSuffix, NewFunc, CodeInfo,
-                                      ModuleLevelChanges ? &DIFinder : nullptr);
+                                      CT == CloneType::ModuleLevelChanges ? &DIFinder : nullptr);
 
     // Add basic block mapping.
     VMap[&BB] = CBB;

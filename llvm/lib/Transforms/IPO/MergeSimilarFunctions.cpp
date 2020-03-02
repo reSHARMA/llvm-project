@@ -273,7 +273,7 @@ static void insertFunctionAfter(Function *NewF, Function *PredF) {
 /// IntPtrType (get it from DataLayout). This is guaranteed to generate no-op
 /// casts, otherwise it will assert.
 static Value *createCastIfNeeded(Value *V, Type *DstType,
-                                 Value *InstrOrBB, Type *IntPtrType) {
+                                 Value *InstrOrBB, Type *IntPtrType, const DataLayout *DL) {
   if (V->getType() == DstType)
     return V;
 
@@ -297,7 +297,7 @@ static Value *createCastIfNeeded(Value *V, Type *DstType,
         = Builder.CreateExtractValue(V, ArrayRef<unsigned int>(I));
       Value *Element = createCastIfNeeded(ExtractedValue,
                                           DstType->getStructElementType(I),
-                                          InstrOrBB, IntPtrType);
+                                          InstrOrBB, IntPtrType, DL);
       Result =
           Builder.CreateInsertValue(Result, Element, ArrayRef<unsigned int>(I));
     }
@@ -325,7 +325,7 @@ static Value *createCastIfNeeded(Value *V, Type *DstType,
     llvm_unreachable("Can only cast int -> ptr or ptr -> (ptr or int)");
   }
 
-  assert(cast<CastInst>(Result)->isNoopCast(IntPtrType) &&
+  assert(cast<CastInst>(Result)->isNoopCast(*DL) &&
       "Cast is not a no-op cast. Potential loss of precision");
 
   return Result;
@@ -1395,7 +1395,7 @@ static void writeThunkBody(Function *Thunk, Function *F,
   FunctionType *FFTy = F->getFunctionType();
   Type *IntPtrTy = DL->getIntPtrType(FFTy->getContext());
   for (auto &AI : Thunk->args()) {
-    Value *Cast = createCastIfNeeded(&AI, FFTy->getParamType(i), BB, IntPtrTy);
+    Value *Cast = createCastIfNeeded(&AI, FFTy->getParamType(i), BB, IntPtrTy, DL);
     Args.push_back(Cast);
     ++i;
   }
@@ -1416,7 +1416,7 @@ static void writeThunkBody(Function *Thunk, Function *F,
     else if (CI->getType()->isPointerTy() && RetTy->isIntegerTy())
       Builder.CreateRet(Builder.CreatePtrToInt(CI, RetTy));
     else {
-      Value *Cast = createCastIfNeeded(CI, RetTy, BB, IntPtrTy);
+      Value *Cast = createCastIfNeeded(CI, RetTy, BB, IntPtrTy, DL);
       Builder.CreateRet(Cast);
     }
   }
@@ -1550,7 +1550,7 @@ static void insertCondAndRemapInstructions(
     Instruction *F1InstInNewF, const std::vector<const Instruction *> &F2Insts,
     Function *NewF, ValueToValueMapTy &F1toNewF,
     const SmallVectorImpl<FunctionComparator *> &Comps,
-    Type *IntPtrTy) {
+    Type *IntPtrTy, const DataLayout *DL) {
   assert(F2Insts.size() == Comps.size() &&
       "Mis-match between F2Insts & Comps!");
 
@@ -1598,7 +1598,7 @@ static void insertCondAndRemapInstructions(
         Value *Cast = createCastIfNeeded(F2NewFOperand,
             F2OrigOperand->getType(),
             F2InstInNewF,
-            IntPtrTy);
+            IntPtrTy, DL);
         F2InstInNewF->setOperand(OpId, Cast);
       }
     }
@@ -1621,7 +1621,7 @@ static void insertCondAndRemapInstructions(
         F2Ret->setOperand(0,
                           createCastIfNeeded(F2Ret->getReturnValue(),
                                              F1Ret->getReturnValue()->getType(),
-                                             F2Ret, IntPtrTy));
+                                             F2Ret, IntPtrTy, DL));
     }
   } else if (!F1InstInNewF->use_empty()) {
     // If the instructions have uses, we need to insert a PHI node.
@@ -1649,7 +1649,7 @@ static void insertCondAndRemapInstructions(
             createCastIfNeeded(F2InstInNewF,
               F1IType,
               Terminators[FnI+1],
-              IntPtrTy));
+              IntPtrTy, DL));
       }
 
       Phi->addIncoming(F2InstInNewF, F2InstInNewF->getParent());
@@ -1742,7 +1742,7 @@ static void mergePHINode(const SmallVectorImpl<FunctionComparator *> &Fns,
       const DataLayout *FTD = Fns[FnI]->getDataLayout();
       Type *IntPtrTy = FTD ? FTD->getIntPtrType(Ctx) : NULL;
       F2InValNewF = createCastIfNeeded(F2InValNewF, F1InValNewF->getType(),
-                                       InsertPt, IntPtrTy);
+                                       InsertPt, IntPtrTy, FTD);
 
       // Create compare & select
       Value *ChoiceArg = getLastArg(NewF);
@@ -1970,7 +1970,7 @@ void MergeSimilarFunctions::outlineAndMergeFunctions(
       continue; // we already handled these above
 
     insertCondAndRemapInstructions(F1InstInNewF, F2Insts,
-      NewF, VMap, Fns, IntPtrType);
+      NewF, VMap, Fns, IntPtrType, DL);
   }
 
   // Replace functions with thunks
