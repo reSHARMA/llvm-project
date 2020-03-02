@@ -126,6 +126,20 @@ BasicBlock *CloneBasicBlock(const BasicBlock *BB, ValueToValueMapTy &VMap,
 Function *CloneFunction(Function *F, ValueToValueMapTy &VMap,
                         ClonedCodeInfo *CodeInfo = nullptr);
 
+/// Used to control @fn CloneFunctionInto.
+enum class CloneType {
+  InvalidCloneType,
+  /// Cloning will result in module level changes.
+  ModuleLevelChanges,
+  /// !ModuleLevelChanges, When no module level changes will be made to the
+  /// cloned function.
+  NoModuleLevelChanges,
+  /// Cloning will be used for extracting functions by passes like function
+  /// merging, it does not require module level changes but debug info needs
+  /// special treatment like: DISubprogram is not cloned.
+  ExtractingFunctions,
+};
+
 /// Clone OldFunc into NewFunc, transforming the old arguments into references
 /// to VMap values.  Note that if NewFunc already has basic blocks, the ones
 /// cloned into it will be added to the end of the function.  This function
@@ -136,7 +150,7 @@ Function *CloneFunction(Function *F, ValueToValueMapTy &VMap,
 /// mappings.
 ///
 void CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
-                       ValueToValueMapTy &VMap, bool ModuleLevelChanges,
+                       ValueToValueMapTy &VMap, CloneType CT,
                        SmallVectorImpl<ReturnInst*> &Returns,
                        const char *NameSuffix = "",
                        ClonedCodeInfo *CodeInfo = nullptr,

@@ -80,10 +80,8 @@ BasicBlock *llvm::CloneBasicBlock(const BasicBlock *BB, ValueToValueMapTy &VMap,
 
 // Clone OldFunc into NewFunc, transforming the old arguments into references to
 // VMap values.
-//
 void llvm::CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
-                             ValueToValueMapTy &VMap,
-                             bool ModuleLevelChanges,
+                             ValueToValueMapTy &VMap, CloneType CT,
                              SmallVectorImpl<ReturnInst*> &Returns,
                              const char *NameSuffix, ClonedCodeInfo *CodeInfo,
                              ValueMapTypeRemapper *TypeMapper,
@@ -101,12 +99,12 @@ void llvm::CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
   NewFunc->copyAttributesFrom(OldFunc);
   NewFunc->setAttributes(NewAttrs);
 
+  RemapFlags RF =
+      (CT == CloneType::ModuleLevelChanges) ? RF_None : RF_NoModuleLevelChanges;
   // Fix up the personality function that got copied over.
   if (OldFunc->hasPersonalityFn())
-    NewFunc->setPersonalityFn(
-        MapValue(OldFunc->getPersonalityFn(), VMap,
-                 ModuleLevelChanges ? RF_None : RF_NoModuleLevelChanges,
-                 TypeMapper, Materializer));
+    NewFunc->setPersonalityFn(MapValue(OldFunc->getPersonalityFn(), VMap, RF,
+                                       TypeMapper, Materializer));
 
   SmallVector<AttributeSet, 4> NewArgAttrs(NewFunc->arg_size());
   AttributeList OldAttrs = OldFunc->getAttributes();
@@ -123,11 +121,11 @@ void llvm::CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
       AttributeList::get(NewFunc->getContext(), OldAttrs.getFnAttributes(),
                          OldAttrs.getRetAttributes(), NewArgAttrs));
 
-  bool MustCloneSP =
-      OldFunc->getParent() && OldFunc->getParent() == NewFunc->getParent();
+  bool MustCloneSP = CT != CloneType::ExtractingFunctions &&
+                     OldFunc->getParent() && OldFunc->getParent() == NewFunc->getParent();
   DISubprogram *SP = OldFunc->getSubprogram();
   if (SP) {
-    assert(!MustCloneSP || ModuleLevelChanges);
+    assert(!MustCloneSP || CT == CloneType::ModuleLevelChanges);
     // Add mappings for some DebugInfo nodes that we don't want duplicated
     // even if they're distinct.
     auto &MD = VMap.MD();
@@ -144,10 +142,7 @@ void llvm::CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
   OldFunc->getAllMetadata(MDs);
   for (auto MD : MDs) {
     NewFunc->addMetadata(
-        MD.first,
-        *MapMetadata(MD.second, VMap,
-                     ModuleLevelChanges ? RF_None : RF_NoModuleLevelChanges,
-                     TypeMapper, Materializer));
+        MD.first, *MapMetadata(MD.second, VMap, RF, TypeMapper, Materializer));
   }
 
   // When we remap instructions, we want to avoid duplicating inlined
@@ -207,9 +202,7 @@ void llvm::CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
        BB != BE; ++BB)
     // Loop over all instructions, fixing each one as we find it...
     for (Instruction &II : *BB)
-      RemapInstruction(&II, VMap,
-                       ModuleLevelChanges ? RF_None : RF_NoModuleLevelChanges,
-                       TypeMapper, Materializer);
+      RemapInstruction(&II, VMap, RF, TypeMapper, Materializer);
 
   // Register all DICompileUnits of the old parent module in the new parent module
   auto* OldModule = OldFunc->getParent();
@@ -262,8 +255,9 @@ Function *llvm::CloneFunction(Function *F, ValueToValueMapTy &VMap,
     }
 
   SmallVector<ReturnInst*, 8> Returns;  // Ignore returns cloned.
-  CloneFunctionInto(NewF, F, VMap, F->getSubprogram() != nullptr, Returns, "",
-                    CodeInfo);
+  CloneType CT = F->getSubprogram() != nullptr ? CloneType::ModuleLevelChanges
+                                               : CloneType::InvalidCloneType;
+  CloneFunctionInto(NewF, F, VMap, CT, Returns, "", CodeInfo);
 
   return NewF;
 }

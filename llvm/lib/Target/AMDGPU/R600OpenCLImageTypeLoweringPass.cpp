@@ -316,7 +316,7 @@ class R600OpenCLImageTypeLoweringPass : public ModulePass {
       }
     }
     SmallVector<ReturnInst*, 8> Returns;
-    CloneFunctionInto(NewF, F, VMap, /*ModuleLevelChanges=*/false, Returns);
+    CloneFunctionInto(NewF, F, VMap, CloneType::NoModuleLevelChanges, Returns);
 
     // Build new MDNode.
     SmallVector<Metadata *, 6> KernelMDArgs;

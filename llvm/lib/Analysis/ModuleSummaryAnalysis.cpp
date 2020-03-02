@@ -76,6 +76,89 @@ cl::opt<std::string> ModuleSummaryDotFile(
     cl::value_desc("filename"),
     cl::desc("File to emit dot graph of new summary into."));
 
+cl::opt<bool> UseGlobalAliases(
+    "mergesimilarfunc-global-aliases", cl::Hidden, cl::init(false),
+    cl::desc("Enable writing alias by enabling global aliases"));
+
+cl::opt<unsigned> MergeMinInsts(
+    "mergesimilarfunc-min-insts", cl::Hidden, cl::init(4),
+    cl::desc("Min instructions required to even consider single block fns"));
+
+// Minimize the name pollution caused by the enum values.
+namespace Opt {
+cl::opt<enum MergeLevelEnum> MergeLevel(
+    "mergesimilarfunc-level", cl::Hidden, cl::ZeroOrMore,
+    cl::desc("Level of function merging:"), cl::init(size),
+    cl::values(clEnumVal(none, "function merging disabled"),
+               clEnumVal(size, "only try to merge functions that are optimized "
+                               "for size"),
+               clEnumVal(all, "attempt to merge all similar functions")));
+}
+
+namespace llvm {
+
+static const char *MERGED_SUFFIX = "__merged";
+
+/// Returns the type id for a type to be hashed. We turn pointer types into
+/// integers here because the actual compare logic below considers pointers and
+/// integers of the same size as equal.
+static Type::TypeID getTypeIDForHash(Type *Ty) {
+  if (Ty->isPointerTy())
+    return Type::IntegerTyID;
+  return Ty->getTypeID();
+}
+
+bool isAliasCapable(const Function* G) {
+  return
+    UseGlobalAliases && G->hasGlobalUnnamedAddr()
+    && (G->hasExternalLinkage() || G->hasLocalLinkage() || G->hasWeakLinkage());
+}
+
+bool isComparisonCandidate(const Function *F) {
+  if (Opt::MergeLevel == Opt::size) {
+    // Only consider functions that are to be optimized for size.
+    // By default, that is all functions at -Os/-Oz and nothing at -O2.
+    bool Os = F->getAttributes().
+      hasAttribute(AttributeList::FunctionIndex, Attribute::OptimizeForSize);
+    bool Oz = F->getAttributes().
+      hasAttribute(AttributeList::FunctionIndex, Attribute::MinSize);
+    if (!Os && !Oz)
+      return false;
+  }
+
+  // Ignore declarations and tiny functions - no point in merging those
+  if (F->isDeclaration()) return false;
+  if (F->getName().endswith(MERGED_SUFFIX)) return false;
+  if (F->hasAvailableExternallyLinkage()) return false;
+  if (F->hasFnAttribute(Attribute::AlwaysInline)) return false;
+  if (F->size() == 1 && F->begin()->size() < MergeMinInsts)
+    return isAliasCapable(F);
+
+  return true;
+}
+
+unsigned profileFunction(const Function *F) {
+  FunctionType *FTy = F->getFunctionType();
+  if (!isComparisonCandidate(F))
+    return 0;
+  if (F->hasGC() || FTy->isVarArg() || !F->hasExactDefinition())
+    return 0;
+  FoldingSetNodeID ID;
+  ID.AddInteger(F->size());
+  ID.AddInteger(F->getCallingConv());
+  // Add pure attribute, has side-effects attribute.
+  ID.AddBoolean(F->hasFnAttribute(Attribute::NoUnwind));
+  ID.AddBoolean(F->hasFnAttribute(Attribute::NoReturn));
+  //ID.AddBoolean(F->hasGC());
+  //ID.AddBoolean(F->isInterposable());
+  //ID.AddBoolean(FTy->isVarArg());
+  ID.AddInteger(getTypeIDForHash(FTy->getReturnType()));
+  for (unsigned i = 0, e = FTy->getNumParams(); i != e; ++i)
+    ID.AddInteger(getTypeIDForHash(FTy->getParamType(i)));
+  return ID.ComputeHash();
+}
+}
+
 // Walk through the operands of a given User via worklist iteration and populate
 // the set of GlobalValue references encountered. Invoked either on an
 // Instruction or a GlobalVariable (which walks its initializer).

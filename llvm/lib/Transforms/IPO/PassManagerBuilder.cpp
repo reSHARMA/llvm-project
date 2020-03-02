@@ -149,6 +149,10 @@ cl::opt<bool> EnableOrderFileInstrumentation(
     "enable-order-file-instrumentation", cl::init(false), cl::Hidden,
     cl::desc("Enable order file instrumentation (default = off)"));
 
+static cl::opt<bool> EnableMergeSimilarFunctions(
+    "enable-merge-sim-functions", cl::init(false), cl::Hidden,
+    cl::desc("Enable the Function merging pass (default = on)"));
+
 static cl::opt<bool>
     EnableMatrix("enable-matrix", cl::init(false), cl::Hidden,
                  cl::desc("Enable lowering of the matrix intrinsics"));
@@ -612,6 +616,10 @@ void PassManagerBuilder::populateModulePassManager(
     MPM.add(createOpenMPOptLegacyPass());
 
   MPM.add(createPostOrderFunctionAttrsLegacyPass());
+  if (EnableMergeSimilarFunctions) {
+    auto *Summary = (ImportSummary ? ImportSummary : ExportSummary);
+    MPM.add(createMergeSimilarFunctionsPass(Summary));
+  }
   if (OptLevel > 2)
     MPM.add(createArgumentPromotionPass()); // Scalarize uninlined fn args
 
@@ -823,6 +831,9 @@ void PassManagerBuilder::populateModulePassManager(
 
   if (MergeFunctions)
     MPM.add(createMergeFunctionsPass());
+
+   if (EnableMergeSimilarFunctions)
+    MPM.add(createMergeSimilarFunctionsPass());
 
   // LoopSink pass sinks instructions hoisted by LICM, which serves as a
   // canonicalization pass that enables other optimizations. As a result,
@@ -1051,6 +1062,8 @@ void PassManagerBuilder::addLateLTOOptimizationPasses(
   // currently it damages debug info.
   if (MergeFunctions)
     PM.add(createMergeFunctionsPass());
+  if (EnableMergeSimilarFunctions)
+    PM.add(createMergeSimilarFunctionsPass());
 }
 
 void PassManagerBuilder::populateThinLTOPassManager(

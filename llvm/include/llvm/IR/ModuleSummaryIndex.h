@@ -1109,6 +1109,85 @@ public:
     return CallGraphRoot;
   }
 
+  bool hasSimilarFunction(unsigned id) { return SimilarFunctions.count(id); }
+
+  void addToSimilarFunctions(unsigned id, GlobalValue::GUID GUID) {
+    if (id == 0)
+      return; // invalid id.
+    if (DuplicateFunctions.count(GUID))
+      return;
+    ValueInfo VI = getValueInfo(GUID);
+    if (!VI)
+      return;
+    // assert(VI.getSummaryList().size() == 1);
+    if (VI.getSummaryList().size() != 1)
+      return;
+    GlobalValueSummary *S = VI.getSummaryList()[0].get();
+    if (!isa<FunctionSummary>(S))
+      return;
+    assert(isa<FunctionSummary>(S) && "Not a function summary!");
+    if (FunctionSimilarityHashes.count(GUID)) {
+      // Erase the GUID having multiple visits in the ModuleSummaryIndex.
+      FunctionSimilarityHashes.erase(GUID);
+      DuplicateFunctions.insert(GUID);
+      return;
+    }
+
+    FunctionSimilarityHashes[GUID] = id;
+  }
+
+  void populateReverseSimilarityHashMap() {
+    for (auto &p : FunctionSimilarityHashes)
+      SimilarFunctions[p.second].push_back(p.first);
+  }
+
+  void removeSingleEntriesFromSimHashMaps() {
+    // Iterate over the hash to remove entries with no duplicates.
+    for (auto I = SimilarFunctions.begin(), E = SimilarFunctions.end();
+         I != E;) {
+      auto Next = std::next(I);
+      assert(I->second.size() && "Empty Entry!");
+      if (I->second.size() == 1) {
+        FunctionSimilarityHashes.erase(I->second[0]);
+        SimilarFunctions.erase(I);
+      }
+      I = Next;
+    }
+  }
+
+  std::map<unsigned, std::vector<GlobalValue::GUID>> &getSimilarFunctions() {
+    return SimilarFunctions;
+  }
+
+  const std::map<unsigned, std::vector<GlobalValue::GUID>> &
+  getSimilarFunctions() const {
+    return SimilarFunctions;
+  }
+
+  unsigned getSimilarityHash(GlobalValue::GUID ID) const {
+    return FunctionSimilarityHashes.find(ID)->second;
+  }
+
+  std::map<GlobalValue::GUID, unsigned> &getSimilarFunctionsHash() {
+    return FunctionSimilarityHashes;
+  }
+
+  const std::map<GlobalValue::GUID, unsigned> &getSimilarFunctionsHash() const {
+    return FunctionSimilarityHashes;
+  }
+
+  void addToHostSimilarFunction(GlobalValue::GUID ID) {
+    HostSimilarFunction.insert(ID);
+  }
+
+  std::set<GlobalValue::GUID> &getHostSimilarFunction() {
+    return HostSimilarFunction;
+  }
+
+  const std::set<GlobalValue::GUID> &getHostSimilarFunction() const {
+    return HostSimilarFunction;
+  }
+
   bool withGlobalValueDeadStripping() const {
     return WithGlobalValueDeadStripping;
   }

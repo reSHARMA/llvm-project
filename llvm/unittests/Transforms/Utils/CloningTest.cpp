@@ -176,7 +176,7 @@ TEST_F(CloneInstruction, Attributes) {
   ValueToValueMapTy VMap;
   VMap[A] = UndefValue::get(A->getType());
 
-  CloneFunctionInto(F2, F1, VMap, false, Returns);
+  CloneFunctionInto(F2, F1, VMap, CloneType::NoModuleLevelChanges, Returns);
   EXPECT_FALSE(F2->arg_begin()->hasNoCaptureAttr());
 
   delete F1;
@@ -199,7 +199,7 @@ TEST_F(CloneInstruction, CallingConvention) {
   ValueToValueMapTy VMap;
   VMap[&*F1->arg_begin()] = &*F2->arg_begin();
 
-  CloneFunctionInto(F2, F1, VMap, false, Returns);
+  CloneFunctionInto(F2, F1, VMap, CloneType::NoModuleLevelChanges, Returns);
   EXPECT_EQ(CallingConv::Cold, F2->getCallingConv());
 
   delete F1;
@@ -700,7 +700,8 @@ TEST(CloneFunction, CloneFunctionToDifferentModule) {
   VMap[ImplFunction] = DeclFunction;
   // No args to map
   SmallVector<ReturnInst*, 8> Returns;
-  CloneFunctionInto(DeclFunction, ImplFunction, VMap, true, Returns);
+  CloneFunctionInto(DeclFunction, ImplFunction, VMap,
+                    CloneType::ModuleLevelChanges, Returns);
 
   EXPECT_FALSE(verifyModule(*ImplModule, &errs()));
   EXPECT_FALSE(verifyModule(*DeclModule, &errs()));

@@ -161,7 +161,7 @@ std::unique_ptr<Module> llvm::CloneModule(
     }
 
     SmallVector<ReturnInst *, 8> Returns; // Ignore returns cloned.
-    CloneFunctionInto(F, &I, VMap, /*ModuleLevelChanges=*/true, Returns);
+    CloneFunctionInto(F, &I, VMap, CloneType::ModuleLevelChanges, Returns);
 
     if (I.hasPersonalityFn())
       F->setPersonalityFn(MapValue(I.getPersonalityFn(), VMap));

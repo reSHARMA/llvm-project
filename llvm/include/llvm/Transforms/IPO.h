@@ -216,6 +216,13 @@ ModulePass *createMergeFunctionsPass();
 ModulePass *createHotColdSplittingPass();
 
 //===----------------------------------------------------------------------===//
+/// createMergeSimilarFunctionsPass - This pass discovers similar functions and
+/// merges them.
+///
+ModulePass *
+createMergeSimilarFunctionsPass(const ModuleSummaryIndex *S = nullptr);
+
+//===----------------------------------------------------------------------===//
 /// createPartialInliningPass - This pass inlines parts of functions.
 ///
 ModulePass *createPartialInliningPass();
