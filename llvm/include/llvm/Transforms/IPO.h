@@ -290,6 +290,9 @@ ModulePass *createSampleProfileLoaderPass(StringRef Name);
 ModulePass *createWriteThinLTOBitcodePass(raw_ostream &Str,
                                           raw_ostream *ThinLinkOS = nullptr);
 
+/// Decide which functions to import for function merging during the thinlto.
+/// Populates information from each function summary to module summary index.
+void computeMergeSimilarFunctions(ModuleSummaryIndex &Index);
 } // End llvm namespace
 
 #endif

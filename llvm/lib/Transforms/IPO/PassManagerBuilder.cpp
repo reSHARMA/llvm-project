@@ -149,7 +149,7 @@ cl::opt<bool> EnableOrderFileInstrumentation(
     "enable-order-file-instrumentation", cl::init(false), cl::Hidden,
     cl::desc("Enable order file instrumentation (default = off)"));
 
-static cl::opt<bool> EnableMergeSimilarFunctions(
+cl::opt<bool> EnableMergeSimilarFunctions(
     "enable-merge-sim-functions", cl::init(false), cl::Hidden,
     cl::desc("Enable the Function merging pass (default = on)"));
 

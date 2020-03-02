@@ -76,6 +76,7 @@ extern cl::opt<std::string> RemarksFilename;
 extern cl::opt<std::string> RemarksPasses;
 extern cl::opt<bool> RemarksWithHotness;
 extern cl::opt<std::string> RemarksFormat;
+extern cl::opt<bool> EnableMergeSimilarFunctions;
 }
 
 namespace {
@@ -935,6 +936,8 @@ void ThinLTOCodeGenerator::run() {
 
   // Sequential linking phase
   auto Index = linkCombinedIndex();
+  if (EnableMergeSimilarFunctions)
+    computeMergeSimilarFunctions(*Index);
 
   // Save temps: index.
   if (!SaveTempsDir.empty()) {

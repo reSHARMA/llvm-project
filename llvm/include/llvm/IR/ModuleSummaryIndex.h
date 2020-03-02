@@ -1024,6 +1024,20 @@ private:
   StringSaver Saver;
   BumpPtrAllocator Alloc;
 
+  /// Functions with hash code as a measure of structural similarity.
+  /// Used by MergeSimilarFunctions. The value_type is the hash code
+  /// computed by profileFunction.
+  std::map<GlobalValue::GUID, unsigned> FunctionSimilarityHashes;
+  /// Reverse map of @var SimilarFunctionsHash to be used during thin-lto.
+  /// Each GUID in the vector corresponds to functions with same hash (id).
+  std::map<unsigned, std::vector<GlobalValue::GUID>> SimilarFunctions;
+  /// Functions having multiple entries in ModuleSummaryIndex.
+  std::set<GlobalValue::GUID> DuplicateFunctions;
+  /// All similar functions w.r.t the one in this set will be imported into
+  /// the module of these functions during thin-lto stage.
+  /// FIXME: Maybe use a vector?
+  std::set<GlobalValue::GUID> HostSimilarFunction;
+
   // YAML I/O support.
   friend yaml::MappingTraits<ModuleSummaryIndex>;
 

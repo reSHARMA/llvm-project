@@ -40,6 +40,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Transforms/IPO/WholeProgramDevirt.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
@@ -1298,6 +1299,42 @@ INITIALIZE_PASS(MergeSimilarFunctions, "mergesimilarfunc",
 ModulePass *
 llvm::createMergeSimilarFunctionsPass(const ModuleSummaryIndex *S) {
   return new MergeSimilarFunctions(S);
+}
+
+void llvm::computeMergeSimilarFunctions(ModuleSummaryIndex &Index) {
+  assert(Index.getSimilarFunctions().empty() && "Inserting SimHash twice");
+  for (auto &P : Index) {
+    for (auto &S : P.second.SummaryList) {
+      FunctionSummary *FS = dyn_cast<FunctionSummary>(S.get());
+      if (!FS)
+        continue;
+      LLVM_DEBUG(llvm::errs() << "\nSimilarity hash: " << FS->similarityHash());
+      Index.addToSimilarFunctions(FS->similarityHash(), FS->getOriginalName());
+    }
+  }
+  Index.populateReverseSimilarityHashMap();
+  llvm::errs() << "\nSize SimilarFunctionsHash: "
+               << Index.getSimilarFunctionsHash().size();
+  llvm::errs() << "\nSize SimilarFunctions: "
+               << Index.getSimilarFunctions().size();
+  Index.removeSingleEntriesFromSimHashMaps();
+
+  LLVM_DEBUG(llvm::errs() << "\nSize SimilarFunctionsHash: "
+                     << Index.getSimilarFunctionsHash().size());
+  LLVM_DEBUG(llvm::errs() << "\nSize SimilarFunctions: "
+                     << Index.getSimilarFunctions().size());
+
+  auto &SimFunctions = Index.getSimilarFunctions();
+  // Shouldn't have entries with hash of 0, because those are placeholders.
+  assert(!SimFunctions.count(0));
+  auto &HostSimFunction = Index.getHostSimilarFunction();
+  for (auto I = SimFunctions.begin(), E = SimFunctions.end(); I != E; ++I) {
+    // Make the first of all similar functions as host.
+    HostSimFunction.insert(I->second[0]);
+  }
+  LLVM_DEBUG(llvm::errs() << "\nSize getHostSimilarFunction: "
+                     << Index.getHostSimilarFunction().size());
+  return;
 }
 
 bool MergeSimilarFunctions::runOnModule(Module &M) {
