@@ -552,12 +552,14 @@ static void computeFunctionSummary(ModuleSummaryIndex &Index, const Module &M,
       // Don't try to import functions with noinline attribute.
       F.getAttributes().hasFnAttribute(Attribute::NoInline),
       F.hasFnAttribute(Attribute::AlwaysInline)};
+  // SimHash of 0 means just a placeholder.
+  unsigned SimHash = llvm::profileFunction(&F);
   auto FuncSummary = std::make_unique<FunctionSummary>(
       Flags, NumInsts, FunFlags, /*EntryCount=*/0, std::move(Refs),
       CallGraphEdges.takeVector(), TypeTests.takeVector(),
       TypeTestAssumeVCalls.takeVector(), TypeCheckedLoadVCalls.takeVector(),
       TypeTestAssumeConstVCalls.takeVector(),
-      TypeCheckedLoadConstVCalls.takeVector());
+      TypeCheckedLoadConstVCalls.takeVector(), SimHash);
   if (NonRenamableLocal)
     CantBePromoted.insert(F.getGUID());
   Index.addGlobalValueSummary(F, std::move(FuncSummary));
@@ -799,7 +801,7 @@ ModuleSummaryIndex llvm::buildModuleSummaryIndex(
                     ArrayRef<FunctionSummary::VFuncId>{},
                     ArrayRef<FunctionSummary::VFuncId>{},
                     ArrayRef<FunctionSummary::ConstVCall>{},
-                    ArrayRef<FunctionSummary::ConstVCall>{});
+                    ArrayRef<FunctionSummary::ConstVCall>{}, 0);
             Index.addGlobalValueSummary(*GV, std::move(Summary));
           } else {
             std::unique_ptr<GlobalVarSummary> Summary =

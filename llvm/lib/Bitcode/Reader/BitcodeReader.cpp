@@ -5847,12 +5847,12 @@ Error ModuleSummaryIndexBitcodeReader::parseEntireSummary(unsigned ID) {
       break;
     }
     // FS_PERMODULE: [valueid, flags, instcount, fflags, numrefs,
-    //                numrefs x valueid, n x (valueid)]
+    //                numrefs x valueid, simhash, n x (valueid)]
     // FS_PERMODULE_PROFILE: [valueid, flags, instcount, fflags, numrefs,
-    //                        numrefs x valueid,
+    //                        numrefs x valueid, simhash,
     //                        n x (valueid, hotness)]
     // FS_PERMODULE_RELBF: [valueid, flags, instcount, fflags, numrefs,
-    //                      numrefs x valueid,
+    //                      numrefs x valueid, simhash,
     //                      n x (valueid, relblockfreq)]
     case bitc::FS_PERMODULE:
     case bitc::FS_PERMODULE_RELBF:
@@ -5861,6 +5861,7 @@ Error ModuleSummaryIndexBitcodeReader::parseEntireSummary(unsigned ID) {
       uint64_t RawFlags = Record[1];
       unsigned InstCount = Record[2];
       uint64_t RawFunFlags = 0;
+      unsigned SimHash = 0;
       unsigned NumRefs = Record[3];
       unsigned NumRORefs = 0, NumWORefs = 0;
       int RefListStartIndex = 4;
@@ -5874,6 +5875,10 @@ Error ModuleSummaryIndexBitcodeReader::parseEntireSummary(unsigned ID) {
           if (Version >= 7) {
             NumWORefs = Record[6];
             RefListStartIndex = 7;
+            if (Version >= 8) {
+              SimHash = Record[7];
+              RefListStartIndex = 8;
+            }
           }
         }
       }
@@ -5901,7 +5906,7 @@ Error ModuleSummaryIndexBitcodeReader::parseEntireSummary(unsigned ID) {
           std::move(PendingTypeTestAssumeVCalls),
           std::move(PendingTypeCheckedLoadVCalls),
           std::move(PendingTypeTestAssumeConstVCalls),
-          std::move(PendingTypeCheckedLoadConstVCalls));
+          std::move(PendingTypeCheckedLoadConstVCalls), SimHash);
       auto VIAndOriginalGUID = getValueInfoFromValueId(ValueID);
       FS->setModulePath(getThisModule()->first());
       FS->setOriginalName(VIAndOriginalGUID.second);
@@ -5988,9 +5993,9 @@ Error ModuleSummaryIndexBitcodeReader::parseEntireSummary(unsigned ID) {
       break;
     }
     // FS_COMBINED: [valueid, modid, flags, instcount, fflags, numrefs,
-    //               numrefs x valueid, n x (valueid)]
+    //               numrefs x valueid, simhash, n x (valueid)]
     // FS_COMBINED_PROFILE: [valueid, modid, flags, instcount, fflags, numrefs,
-    //                       numrefs x valueid, n x (valueid, hotness)]
+    //                       numrefs x valueid, simhash, n x (valueid, hotness)]
     case bitc::FS_COMBINED:
     case bitc::FS_COMBINED_PROFILE: {
       unsigned ValueID = Record[0];
@@ -5998,6 +6003,7 @@ Error ModuleSummaryIndexBitcodeReader::parseEntireSummary(unsigned ID) {
       uint64_t RawFlags = Record[2];
       unsigned InstCount = Record[3];
       uint64_t RawFunFlags = 0;
+      unsigned SimHash = 0;
       uint64_t EntryCount = 0;
       unsigned NumRefs = Record[4];
       unsigned NumRORefs = 0, NumWORefs = 0;
@@ -6018,6 +6024,10 @@ Error ModuleSummaryIndexBitcodeReader::parseEntireSummary(unsigned ID) {
               RefListStartIndex = 9;
               NumWORefs = Record[8];
               NumRORefsOffset = 2;
+              if (Version >= 8) {
+                SimHash = Record[9];
+                RefListStartIndex = 10;
+              }
             }
           }
           NumRORefs = Record[RefListStartIndex - NumRORefsOffset];
@@ -6043,7 +6053,7 @@ Error ModuleSummaryIndexBitcodeReader::parseEntireSummary(unsigned ID) {
           std::move(PendingTypeTestAssumeVCalls),
           std::move(PendingTypeCheckedLoadVCalls),
           std::move(PendingTypeTestAssumeConstVCalls),
-          std::move(PendingTypeCheckedLoadConstVCalls));
+          std::move(PendingTypeCheckedLoadConstVCalls), SimHash);
       LastSeenSummary = FS.get();
       LastSeenGUID = VI.getGUID();
       FS->setModulePath(ModuleIdMap[ModuleId]);

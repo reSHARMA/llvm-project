@@ -42,7 +42,17 @@
 #include <utility>
 #include <vector>
 
+namespace Opt {
+enum MergeLevelEnum { none, size, all };
+}
+
 namespace llvm {
+
+// This is for now until I figure out a better place to put this declaration in.
+// Compute a similarity metric for function F. Useful for merging functions.
+unsigned profileFunction(const Function *F);
+bool isComparisonCandidate(const Function *F);
+bool isAliasCapable(const Function* G);
 
 namespace yaml {
 
@@ -567,7 +577,7 @@ public:
         std::vector<FunctionSummary::VFuncId>(),
         std::vector<FunctionSummary::VFuncId>(),
         std::vector<FunctionSummary::ConstVCall>(),
-        std::vector<FunctionSummary::ConstVCall>());
+        std::vector<FunctionSummary::ConstVCall>(), 0);
   }
 
   /// A dummy node to reference external functions that aren't in the index
@@ -590,6 +600,7 @@ private:
   std::vector<EdgeTy> CallGraphEdgeList;
 
   std::unique_ptr<TypeIdInfo> TIdInfo;
+  unsigned SimilarityHash;
 
 public:
   FunctionSummary(GVFlags Flags, unsigned NumInsts, FFlags FunFlags,
@@ -599,10 +610,12 @@ public:
                   std::vector<VFuncId> TypeTestAssumeVCalls,
                   std::vector<VFuncId> TypeCheckedLoadVCalls,
                   std::vector<ConstVCall> TypeTestAssumeConstVCalls,
-                  std::vector<ConstVCall> TypeCheckedLoadConstVCalls)
+                  std::vector<ConstVCall> TypeCheckedLoadConstVCalls,
+                  unsigned SimHash)
       : GlobalValueSummary(FunctionKind, Flags, std::move(Refs)),
         InstCount(NumInsts), FunFlags(FunFlags), EntryCount(EntryCount),
-        CallGraphEdgeList(std::move(CGEdges)) {
+        CallGraphEdgeList(std::move(CGEdges)),
+        SimilarityHash(SimHash) {
     if (!TypeTests.empty() || !TypeTestAssumeVCalls.empty() ||
         !TypeCheckedLoadVCalls.empty() || !TypeTestAssumeConstVCalls.empty() ||
         !TypeCheckedLoadConstVCalls.empty())
@@ -619,6 +632,9 @@ public:
   static bool classof(const GlobalValueSummary *GVS) {
     return GVS->getSummaryKind() == FunctionKind;
   }
+
+  /// Get the SimilarityHash of this function.
+  unsigned similarityHash() { return SimilarityHash; }
 
   /// Get function summary flags.
   FFlags fflags() const { return FunFlags; }

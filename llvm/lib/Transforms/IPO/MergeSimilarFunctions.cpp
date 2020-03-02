@@ -31,6 +31,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/ModuleSummaryIndex.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/IR/ValueHandle.h"
 #include "llvm/Pass.h"
@@ -54,10 +55,6 @@ STATISTIC(NumMultiMerged, "Number of multi-merged functions");
 
 STATISTIC(NumSimilarFunctionsMerged, "Number of similar functions merged");
 
-static cl::opt<unsigned> MergeMinInsts(
-    "mergesimilarfunc-min-insts", cl::Hidden, cl::init(4),
-    cl::desc("Min instructions required to even consider single block fns"));
-
 static cl::opt<unsigned> MergeDifferingMinInsts(
     "mergesimilarfunc-diff-min-insts", cl::Hidden, cl::init(15),
     cl::desc("Min instructions required to try merging differing functions"));
@@ -73,9 +70,8 @@ static cl::opt<unsigned> MergeMinSimilarity(
 static cl::opt<bool> OptPrintMerges("mergesimilarfunc-print-merges", cl::Hidden,
                                     cl::init(false));
 
-static cl::opt<bool> UseGlobalAliases(
-    "mergesimilarfunc-global-aliases", cl::Hidden, cl::init(false),
-    cl::desc("Enable writing alias by enabling global aliases"));
+extern cl::opt<bool> UseGlobalAliases;
+extern cl::opt<unsigned> MergeMinInsts;
 
 void PrintMerges(const char *Desc, Function *Old, Function *New) {
   if (OptPrintMerges) {
@@ -84,20 +80,16 @@ void PrintMerges(const char *Desc, Function *Old, Function *New) {
   }
 }
 
-// Minimize the name pollution caused by the enum values.
 namespace Opt {
-enum MergeLevelEnum { none, size, all };
-static cl::opt<enum MergeLevelEnum> MergeLevel(
-    "mergesimilarfunc-level", cl::Hidden, cl::ZeroOrMore,
-    cl::desc("Level of function merging:"), cl::init(size),
-    cl::values(clEnumVal(none, "function merging disabled"),
-               clEnumVal(size, "only try to merge functions that are optimized "
-                               "for size"),
-               clEnumVal(all, "attempt to merge all similar functions")));
+  extern cl::opt<enum MergeLevelEnum> MergeLevel;
 }
 
 static const char *MERGED_SUFFIX = "__merged";
+namespace llvm {
+unsigned profileFunction(const Function *F);
+}
 
+/*
 /// Returns the type id for a type to be hashed. We turn pointer types into
 /// integers here because the actual compare logic below considers pointers and
 /// integers of the same size as equal.
@@ -110,7 +102,8 @@ static Type::TypeID getTypeIDForHash(Type *Ty) {
 /// Creates a hash-code for the function which is the same for any two
 /// functions that will compare equal, without looking at the instructions
 /// inside the function.
-static unsigned profileFunction(const Function *F) {
+namespace llvm {
+unsigned profileFunction(const Function *F) {
   FunctionType *FTy = F->getFunctionType();
 
   FoldingSetNodeID ID;
@@ -124,7 +117,7 @@ static unsigned profileFunction(const Function *F) {
     ID.AddInteger(getTypeIDForHash(FTy->getParamType(i)));
   return ID.ComputeHash();
 }
-
+}*/
 
 /// Replace Inst1 by a switch statement that executes Inst1 or one of Inst2s
 /// depending on the value of SwitchVal. If a value in Inst2s is NULL, it
@@ -1120,35 +1113,6 @@ void MergeRegistry::clear() {
   FunctionsToCompare.clear();
 }
 
-static bool isAliasCapable(Function* G) {
-  return
-    UseGlobalAliases && G->hasGlobalUnnamedAddr()
-    && (G->hasExternalLinkage() || G->hasLocalLinkage() || G->hasWeakLinkage());
-}
-
-static bool isComparisonCandidate(Function *F) {
-  if (Opt::MergeLevel == Opt::size) {
-    // Only consider functions that are to be optimized for size.
-    // By default, that is all functions at -Os/-Oz and nothing at -O2.
-    bool Os = F->getAttributes().
-      hasAttribute(AttributeList::FunctionIndex, Attribute::OptimizeForSize);
-    bool Oz = F->getAttributes().
-      hasAttribute(AttributeList::FunctionIndex, Attribute::MinSize);
-    if (!Os && !Oz)
-      return false;
-  }
-
-  // Ignore declarations and tiny functions - no point in merging those
-  if (F->isDeclaration()) return false;
-  if (F->getName().endswith(MERGED_SUFFIX)) return false;
-  if (F->hasAvailableExternallyLinkage()) return false;
-  if (F->hasFnAttribute(Attribute::AlwaysInline)) return false;
-  if (F->size() == 1 && F->begin()->size() < MergeMinInsts)
-    return isAliasCapable(F);
-
-  return true;
-}
-
 void MergeRegistry::defer(Function *F) {
   if (isComparisonCandidate(F))
     Deferred.push_back(F);
@@ -1168,9 +1132,11 @@ unsigned MergeRegistry::enqueue() {
     Function *F = dyn_cast_or_null<Function>(V);
     if (!F) continue;
     if (InsertedFuncs.find(F) != InsertedFuncs.end()) continue;
-    if (!isComparisonCandidate(F)) continue;
 
     unsigned Hash = profileFunction(F);
+    // Hash code of 0 is just a placeholder.
+    if (Hash == 0)
+      continue;
     FunctionsToCompare[Hash].push_front(F);
 
     InsertedFuncs.insert(F);
@@ -1200,10 +1166,11 @@ static void removeFromBucket(Function *F,
 void MergeRegistry::remove(Function *F, bool Reanalyze/*=true*/) {
   // There is no need to remove a function that is not already
   // in a bucket.
-  if (!isComparisonCandidate(F))
+  unsigned Hash = profileFunction(F);
+  // Hash code of 0 is just a placeholder.
+  if (Hash == 0)
     return;
 
-  unsigned Hash = profileFunction(F);
   std::list<ComparableFunction> &Bucket = FunctionsToCompare[Hash];
 
   removeFromBucket(F, Bucket);

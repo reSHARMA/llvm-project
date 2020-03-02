@@ -516,6 +516,11 @@ void PassManagerBuilder::populateModulePassManager(
       MPM.add(createGlobalDCEPass());
     }
 
+    if (EnableMergeSimilarFunctions) {
+      auto *Summary = (ImportSummary ? ImportSummary : ExportSummary);
+      MPM.add(createMergeSimilarFunctionsPass(Summary));
+    }
+
     addExtensionsToPM(EP_EnabledOnOptLevel0, MPM);
 
     if (PrepareForLTO || PrepareForThinLTO) {
@@ -832,8 +837,10 @@ void PassManagerBuilder::populateModulePassManager(
   if (MergeFunctions)
     MPM.add(createMergeFunctionsPass());
 
-   if (EnableMergeSimilarFunctions)
-    MPM.add(createMergeSimilarFunctionsPass());
+  if (EnableMergeSimilarFunctions) {
+    auto *Summary = (ImportSummary ? ImportSummary : ExportSummary);
+    MPM.add(createMergeSimilarFunctionsPass(Summary));
+  }
 
   // LoopSink pass sinks instructions hoisted by LICM, which serves as a
   // canonicalization pass that enables other optimizations. As a result,
@@ -1062,8 +1069,10 @@ void PassManagerBuilder::addLateLTOOptimizationPasses(
   // currently it damages debug info.
   if (MergeFunctions)
     PM.add(createMergeFunctionsPass());
-  if (EnableMergeSimilarFunctions)
-    PM.add(createMergeSimilarFunctionsPass());
+  if (EnableMergeSimilarFunctions) {
+    auto *Summary = (ImportSummary ? ImportSummary : ExportSummary);
+    PM.add(createMergeSimilarFunctionsPass(Summary));
+  }
 }
 
 void PassManagerBuilder::populateThinLTOPassManager(

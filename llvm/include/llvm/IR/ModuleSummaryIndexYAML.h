@@ -230,7 +230,7 @@ template <> struct CustomMappingTraits<GlobalValueSummaryMapTy> {
           std::move(FSum.TypeTestAssumeVCalls),
           std::move(FSum.TypeCheckedLoadVCalls),
           std::move(FSum.TypeTestAssumeConstVCalls),
-          std::move(FSum.TypeCheckedLoadConstVCalls)));
+          std::move(FSum.TypeCheckedLoadConstVCalls), 0));
     }
   }
   static void output(IO &io, GlobalValueSummaryMapTy &V) {
