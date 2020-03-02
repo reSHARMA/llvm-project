@@ -1348,6 +1348,12 @@ bool MergeSimilarFunctions::runOnModule(Module &M) {
   for (auto &I : M)
     Registry.defer(&I);
 
+  // Populate information from each function summary to module summary index.
+  // create a function like computedevirtualization, like compute merge function
+  // that is like making decision before thinlto starts.
+  // use the index during the thinlto time to do function merging.
+  // TODO: Set the linkage type correctly such that imported function
+  // remains and the other one gets removed by the linker.
   do {
     unsigned InsertCount = Registry.enqueue();
 

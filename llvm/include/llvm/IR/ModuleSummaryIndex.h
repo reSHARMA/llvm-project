@@ -634,7 +634,7 @@ public:
   }
 
   /// Get the SimilarityHash of this function.
-  unsigned similarityHash() { return SimilarityHash; }
+  unsigned similarityHash() const { return SimilarityHash; }
 
   /// Get function summary flags.
   FFlags fflags() const { return FunFlags; }

@@ -212,6 +212,8 @@ selectCallee(const ModuleSummaryIndex &Index,
           return false;
         }
 
+        if (!isa<FunctionSummary>(GVSummary->getBaseObject()))
+          return false;
         auto *Summary = cast<FunctionSummary>(GVSummary->getBaseObject());
 
         // If this is a local function, make sure we import the copy
@@ -259,8 +261,25 @@ selectCallee(const ModuleSummaryIndex &Index,
   return cast<GlobalValueSummary>(It->get());
 }
 
-namespace {
+void addAllCallsAndRefs(const FunctionSummary *FS,
+                        FunctionImporter::ExportSetTy &ExportList) {
+  // This is the first time this function was exported from its source
+  // module, so mark all functions and globals it references as exported
+  // to the outside if they are defined in the same source module.
+  // For efficiency, we unconditionally add all the referenced GUIDs
+  // to the ExportList for this module, and will prune out any not
+  // defined in the module later in a single pass.
+  for (auto &Edge : FS->calls()) {
+    auto CalleeGUID = Edge.first.getGUID();
+    ExportList.insert(CalleeGUID);
+  }
+  for (auto &Ref : FS->refs()) {
+    auto GUID = Ref.getGUID();
+    ExportList.insert(GUID);
+  }
+}
 
+namespace {
 using EdgeInfo = std::tuple<const FunctionSummary *, unsigned /* Threshold */,
                             GlobalValue::GUID>;
 
@@ -486,14 +505,14 @@ static void computeImportForFunction(
         if (IsCriticalCallsite)
           NumImportedCriticalFunctionsThinLink++;
       }
-
-      // Any calls/references made by this function will be marked exported
-      // later, in ComputeCrossModuleImport, after import decisions are
-      // complete, which is more efficient than adding them here.
-      if (ExportLists)
-        (*ExportLists)[ExportModulePath].insert(VI);
+      // Make exports in the source module.
+      if (ExportLists) {
+        auto &ExportList = (*ExportLists)[ExportModulePath];
+        ExportList.insert(VI.getGUID());
+      if (!PreviouslyImported)
+        addAllCallsAndRefs(ResolvedCalleeSummary, ExportList);
+     }
     }
-
     auto GetAdjustedThreshold = [](unsigned Threshold, bool IsHotCallsite) {
       // Adjust the threshold for next level of imported functions.
       // The threshold is different for hot callsites because we can then
@@ -510,6 +529,64 @@ static void computeImportForFunction(
     // Insert the newly imported function to the worklist.
     Worklist.emplace_back(ResolvedCalleeSummary, AdjThreshold, VI.getGUID());
   }
+
+  // TODO: Do not import too many functions
+  // TODO: Make hashing little more strict to have higher hit rate
+  auto &HostSimilarFunctions = Index.getHostSimilarFunction();
+  if (HostSimilarFunctions.empty())
+    return;
+  // If the function is similar to others and is a host, then import the others
+  auto GUID = Summary.getOriginalName();
+  auto I = HostSimilarFunctions.find(GUID);
+  if (I != HostSimilarFunctions.end()) {
+    // This Function is in the hosting module.
+    unsigned SimHash = Summary.similarityHash();
+    auto &SimFunctionsHash = Index.getSimilarFunctionsHash();
+    unsigned SimHashFromIndex = SimFunctionsHash.find(GUID)->second;
+    if (SimHash != SimHashFromIndex) {
+      LLVM_DEBUG(dbgs() << "Assertion failed: (SimHash == SimHashFromIndex);");
+      return;
+    }
+    assert(SimHash == SimHashFromIndex);
+    const auto &SimFunctions = Index.getSimilarFunctions();
+    const auto &GUIDs = SimFunctions.find(SimHash)->second;
+    for (auto GUID : GUIDs) {
+      // Import GUIDs from outside module.
+      // FIXME: Import a function once ever!
+      // assert if a GUID is exported twice
+      if (!DefinedGVSummaries.count(GUID)) {
+        // Get the Summary from GUID to add to export summary.
+        if (ValueInfo VI = Index.getValueInfo(GUID)) {
+          if (VI.getSummaryList().size() == 1) {
+            GlobalValueSummary *S = VI.getSummaryList()[0].get();
+            // TODO: Explore why GlobalVar is in this set.
+            if (!isa<FunctionSummary>(S))
+              continue;
+            auto FS = cast<FunctionSummary>(S);
+            // TODO: Import declarations of global variables as well.
+            if (FS->refs().size())
+              continue;
+            auto ExportModulePath = S->modulePath();
+            ImportList[ExportModulePath].insert(GUID);
+            LLVM_DEBUG(dbgs() << "\nImporting: " << GUID << ", with Hash: "
+                              << SimHash << ", from: " << ExportModulePath;);
+            // TODO: Do not process same GUID twice!
+            auto &ExportList = (*ExportLists)[ExportModulePath];
+            // Import other dependencies as decl only.
+            // FIXME: Import only declarations of global variables
+            addAllCallsAndRefs(FS, ExportList);
+            ExportList.insert(GUID);
+          }
+        }
+      } else {
+        auto *S = Index.getValueInfo(GUID).getSummaryList()[0].get();
+        LLVM_DEBUG(dbgs() << "\nNot importing, Already present: " << GUID
+                          << ", with Hash: " << SimHash
+                          << ", in: " << S->modulePath(););
+      }
+    }
+  }
+
 }
 
 /// Given the list of globals defined in a module, compute the list of imports
