@@ -270,12 +270,14 @@ void addAllCallsAndRefs(const FunctionSummary *FS,
   // to the ExportList for this module, and will prune out any not
   // defined in the module later in a single pass.
   for (auto &Edge : FS->calls()) {
-    auto CalleeGUID = Edge.first.getGUID();
-    ExportList.insert(CalleeGUID);
+  //  auto CalleeGUID = Edge.first.getGUID();
+  //  ExportList.insert(CalleeGUID);
+    ExportList.insert(Edge.first);
   }
   for (auto &Ref : FS->refs()) {
-    auto GUID = Ref.getGUID();
-    ExportList.insert(GUID);
+    // auto GUID = Ref.getGUID();
+    // ExportList.insert(GUID);
+    ExportList.insert(Ref);
   }
 }
 
@@ -508,7 +510,7 @@ static void computeImportForFunction(
       // Make exports in the source module.
       if (ExportLists) {
         auto &ExportList = (*ExportLists)[ExportModulePath];
-        ExportList.insert(VI.getGUID());
+        ExportList.insert(VI);
       if (!PreviouslyImported)
         addAllCallsAndRefs(ResolvedCalleeSummary, ExportList);
      }
@@ -575,7 +577,7 @@ static void computeImportForFunction(
             // Import other dependencies as decl only.
             // FIXME: Import only declarations of global variables
             addAllCallsAndRefs(FS, ExportList);
-            ExportList.insert(GUID);
+            ExportList.insert(VI);
           }
         }
       } else {
