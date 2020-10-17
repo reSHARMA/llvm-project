@@ -974,7 +974,7 @@ void TargetPassConfig::addMachinePasses() {
   addPass(&StackMapLivenessID, false);
   addPass(&LiveDebugValuesID, false);
 
-  if (TM->Options.EnableMachineOutliner && getOptLevel() != CodeGenOpt::None &&
+  if (TM->Options.EnableMachineOutliner &&
       EnableMachineOutliner != NeverOutline) {
     bool RunOnAllFunctions = (EnableMachineOutliner == AlwaysOutline);
     bool AddOutliner = RunOnAllFunctions ||

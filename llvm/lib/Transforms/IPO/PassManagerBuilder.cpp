@@ -837,7 +837,7 @@ void PassManagerBuilder::populateModulePassManager(
   if (MergeFunctions)
     MPM.add(createMergeFunctionsPass());
 
-  if (EnableMergeSimilarFunctions) {
+  if (true || EnableMergeSimilarFunctions) {
     auto *Summary = (ImportSummary ? ImportSummary : ExportSummary);
     MPM.add(createMergeSimilarFunctionsPass(Summary));
   }
